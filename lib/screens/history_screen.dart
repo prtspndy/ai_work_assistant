@@ -213,11 +213,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
             ElevatedButton(
               onPressed: () async {
+                final nav = Navigator.of(context);
                 await taskProvider.deleteTask(taskId);
-                if (mounted) {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Close bottom sheet
-                }
+                nav.pop(); // Close dialog
+                nav.pop(); // Close bottom sheet
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accentRed),
               child: Text(loc.translate('delete')),

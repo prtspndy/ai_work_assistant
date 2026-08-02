@@ -132,34 +132,50 @@ class _AIProcessingScreenState extends State<AIProcessingScreen> {
 
               const Spacer(),
 
-              // Error Dialog Handler
+              // Friendly Error Card with Retry Button
               if (aiProvider.errorMessage != null)
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppTheme.accentRed.withOpacity(0.1),
+                    color: AppTheme.accentRed.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: AppTheme.accentRed.withOpacity(0.3)),
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.error_outline, color: AppTheme.accentRed),
-                          const SizedBox(width: 8),
+                          const Icon(Icons.wifi_off_rounded, color: AppTheme.accentRed, size: 22),
+                          const SizedBox(width: 10),
                           Expanded(
-                            child: Text(
-                              loc.translate('gemma_error'),
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF991B1B),
-                                fontWeight: FontWeight.bold,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'AI Offline / Connection Failed',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Color(0xFF991B1B),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  aiProvider.errorMessage!,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF7F1D1D),
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [

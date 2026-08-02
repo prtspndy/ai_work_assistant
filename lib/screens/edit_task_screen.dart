@@ -100,48 +100,69 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       _isSaving = true;
     });
 
-    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
 
-    final timeStr = _dueTime != null ? '${_dueTime!.hour.toString().padLeft(2, '0')}:${_dueTime!.minute.toString().padLeft(2, '0')}' : null;
+      final timeStr = _dueTime != null ? '${_dueTime!.hour.toString().padLeft(2, '0')}:${_dueTime!.minute.toString().padLeft(2, '0')}' : null;
 
-    final updatedTask = widget.task.copyWith(
-      customerName: _customerController.text.trim().isEmpty ? null : _customerController.text.trim(),
-      instructionType: _instructionType,
-      action: _actionController.text.trim().isEmpty ? null : _actionController.text.trim(),
-      itemName: _itemController.text.trim().isEmpty ? null : _itemController.text.trim(),
-      quantity: double.tryParse(_quantityController.text.trim()),
-      quantityUnit: _unitController.text.trim().isEmpty ? null : _unitController.text.trim(),
-      amount: double.tryParse(_amountController.text.trim()),
-      dueDate: _dueDate,
-      dueTime: timeStr,
-      paymentStatus: _paymentStatus,
-      taskStatus: _taskStatus,
-      nextAction: _nextActionController.text.trim().isEmpty ? null : _nextActionController.text.trim(),
-      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-      updatedAt: DateTime.now(),
-    );
+      final updatedTask = widget.task.copyWith(
+        customerName: _customerController.text.trim().isEmpty ? null : _customerController.text.trim(),
+        instructionType: _instructionType,
+        action: _actionController.text.trim().isEmpty ? null : _actionController.text.trim(),
+        itemName: _itemController.text.trim().isEmpty ? null : _itemController.text.trim(),
+        quantity: double.tryParse(_quantityController.text.trim()),
+        quantityUnit: _unitController.text.trim().isEmpty ? null : _unitController.text.trim(),
+        amount: double.tryParse(_amountController.text.trim()),
+        dueDate: _dueDate,
+        dueTime: timeStr,
+        paymentStatus: _paymentStatus,
+        taskStatus: _taskStatus,
+        nextAction: _nextActionController.text.trim().isEmpty ? null : _nextActionController.text.trim(),
+        notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+        updatedAt: DateTime.now(),
+      );
 
-    int savedId;
-    if (widget.isEditingExisting && updatedTask.id != null) {
-      await taskProvider.updateTask(updatedTask);
-      savedId = updatedTask.id!;
-    } else {
-      savedId = await taskProvider.addTask(updatedTask);
+      int savedId;
+      if (widget.isEditingExisting && updatedTask.id != null) {
+        await taskProvider.updateTask(updatedTask);
+        savedId = updatedTask.id!;
+      } else {
+        savedId = await taskProvider.addTask(updatedTask);
+      }
+
+      final finalTask = updatedTask.copyWith(id: savedId);
+
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context).translate('saved_successfully')),
+          backgroundColor: AppTheme.accentGreen,
+        ),
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => WhatsAppMessageScreen(task: finalTask),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Save task error: $e');
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving task: $e'),
+          backgroundColor: AppTheme.accentRed,
+        ),
+      );
     }
-
-    final finalTask = updatedTask.copyWith(id: savedId);
-
-    if (!mounted) return;
-    setState(() {
-      _isSaving = false;
-    });
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => WhatsAppMessageScreen(task: finalTask),
-      ),
-    );
   }
 
   @override

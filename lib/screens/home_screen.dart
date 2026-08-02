@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../core/localization/app_localizations.dart';
 import '../core/theme/app_theme.dart';
+import '../providers/settings_provider.dart';
 import '../providers/task_provider.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/task_card.dart';
@@ -32,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<TaskProvider>(context, listen: false).loadTasks();
+      Provider.of<SettingsProvider>(context, listen: false).testConnection();
     });
   }
 
@@ -100,13 +102,14 @@ class HomeDashboardTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
     final taskProvider = Provider.of<TaskProvider>(context);
+    final settingsProvider = Provider.of<SettingsProvider>(context);
     final currencyFormat = NumberFormat.currency(symbol: '₹', decimalDigits: 0);
 
     return Scaffold(
       backgroundColor: AppTheme.lightBg,
       body: CustomScrollView(
         slivers: [
-          // Header Banner
+          // Header Banner with AI Status Indicator
           SliverToBoxAdapter(
             child: Container(
               padding: const EdgeInsets.only(left: 24, right: 24, top: 60, bottom: 30),
@@ -150,9 +153,55 @@ class HomeDashboardTab extends StatelessWidget {
                           ),
                         ],
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.refresh, color: Colors.white),
-                        onPressed: () => taskProvider.loadTasks(),
+                      Row(
+                        children: [
+                          // AI Status Chip (AI Ready / AI Offline)
+                          GestureDetector(
+                            onTap: () => settingsProvider.testConnection(),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: settingsProvider.isConnected
+                                    ? AppTheme.accentGreen.withOpacity(0.25)
+                                    : Colors.red.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: settingsProvider.isConnected ? AppTheme.accentGreen : Colors.redAccent,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: settingsProvider.isConnected ? AppTheme.accentGreen : Colors.redAccent,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    settingsProvider.isConnected ? 'AI Ready' : 'AI Offline',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            icon: const Icon(Icons.refresh, color: Colors.white, size: 20),
+                            onPressed: () {
+                              taskProvider.loadTasks();
+                              settingsProvider.testConnection();
+                            },
+                          ),
+                        ],
                       ),
                     ],
                   ),

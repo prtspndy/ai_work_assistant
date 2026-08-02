@@ -4,7 +4,7 @@ import '../config/app_config.dart';
 class SettingsService {
   Future<String> getOllamaUrl() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(AppConfig.prefKeyOllamaUrl) ?? AppConfig.defaultOllamaUrlEmulator;
+    return prefs.getString(AppConfig.prefKeyOllamaUrl) ?? AppConfig.defaultOllamaUrlLocal;
   }
 
   Future<bool> setOllamaUrl(String url) async {

@@ -6,7 +6,7 @@ import '../services/settings_service.dart';
 class SettingsProvider extends ChangeNotifier {
   final SettingsService _settingsService = SettingsService();
   
-  String _ollamaUrl = AppConfig.defaultOllamaUrlEmulator;
+  String _ollamaUrl = AppConfig.defaultOllamaUrlLocal;
   String _gemmaModel = AppConfig.defaultGemmaModel;
   bool _isConnected = false;
   bool _isTestingConnection = false;
@@ -40,6 +40,7 @@ class SettingsProvider extends ChangeNotifier {
     _gemmaModel = model.trim();
     await _settingsService.setGemmaModel(_gemmaModel);
     notifyListeners();
+    await testConnection();
   }
 
   Future<bool> testConnection() async {
@@ -53,7 +54,7 @@ class SettingsProvider extends ChangeNotifier {
     _isConnected = result;
     _isTestingConnection = false;
     if (!result) {
-      _connectionError = 'Could not reach Ollama server at $_ollamaUrl';
+      _connectionError = 'Unable to connect to local AI at $_ollamaUrl. Ensure Ollama is running and model $_gemmaModel is loaded.';
     }
     notifyListeners();
     return result;

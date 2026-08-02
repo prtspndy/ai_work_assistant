@@ -1,224 +1,205 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../core/localization/app_localizations.dart';
+import '../core/theme/app_theme.dart';
+import '../providers/language_provider.dart';
 import 'home_screen.dart';
 
-class ChooseLanguageScreen extends StatefulWidget {
-  const ChooseLanguageScreen({super.key});
+class LanguageSelectionScreen extends StatefulWidget {
+  final bool isFromSettings;
+
+  const LanguageSelectionScreen({super.key, this.isFromSettings = false});
 
   @override
-  State<ChooseLanguageScreen> createState() => _ChooseLanguageScreenState();
+  State<LanguageSelectionScreen> createState() => _LanguageSelectionScreenState();
 }
 
-class _ChooseLanguageScreenState extends State<ChooseLanguageScreen> {
-  // Track selected language index (Default: English - index 0)
-  int selectedIndex = 0;
+class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
+  late String _selectedLangCode;
 
-  final List<Map<String, String>> languages = [
-    {'title': 'English', 'subtitle': 'Continue in English', 'badge': 'En'},
-    {'title': 'ગુજરાતી', 'subtitle': 'ગુજરાતીમાં ચાલુ રાખો', 'badge': 'ગુ'},
-    {'title': 'हिंदी', 'subtitle': 'हिंदी में जारी रखें', 'badge': 'हि'},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    final provider = Provider.of<LanguageProvider>(context, listen: false);
+    _selectedLangCode = provider.languageCode;
+  }
+
+  void _onLanguageSelected(String code) {
+    setState(() {
+      _selectedLangCode = code;
+    });
+  }
+
+  Future<void> _proceed() async {
+    final provider = Provider.of<LanguageProvider>(context, listen: false);
+    await provider.setLanguage(_selectedLangCode);
+    if (provider.isFirstRun) {
+      await provider.completeFirstRun();
+    }
+
+    if (!mounted) return;
+    if (widget.isFromSettings) {
+      Navigator.pop(context);
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Theme Colors
-    const primaryBlue = Color(0xFF35AEEF);
-    const softCyan = Color(0xFF8DD8F8);
-    const surfaceWhite = Color(0xFFFFFFFF);
-    const primaryText = Color(0xFF111827);
-    const secondaryText = Color(0xFF6B7280);
-    const borderColor = Color(0xFFDCEAF2);
+    final loc = AppLocalizations.of(context);
+
+    final List<Map<String, String>> languages = [
+      {'code': 'gu', 'name': 'ગુજરાતી', 'sub': 'Gujarati', 'native': 'તમારું વ્યવસાય સહાયક'},
+      {'code': 'hi', 'name': 'हिंदी', 'sub': 'Hindi', 'native': 'आपका व्यापार सहायक'},
+      {'code': 'en', 'name': 'English', 'sub': 'English', 'native': 'Your Business Assistant'},
+    ];
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFF8FCFF),
-              Color(0xFFDDF3FF),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 20),
-
-                // Header Icon Box
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: softCyan.withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(
-                    Icons.g_translate_rounded,
-                    color: primaryBlue,
-                    size: 32,
-                  ),
+      backgroundColor: AppTheme.lightBg,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withOpacity(0.1),
+                  shape: BoxShape.circle,
                 ),
-
-                const SizedBox(height: 24),
-
-                // Title
-                const Text(
-                  'Choose Language',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: primaryText,
-                    letterSpacing: -0.5,
-                  ),
+                child: const Icon(
+                  Icons.translate_rounded,
+                  size: 36,
+                  color: AppTheme.primaryColor,
                 ),
-
-                const SizedBox(height: 12),
-
-                // Subtitle
-                const Text(
-                  'Select your preferred language to customize your experience.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: secondaryText,
-                    height: 1.4,
-                  ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                loc.translate('select_language'),
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0F172A),
                 ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                loc.translate('choose_preferred_language'),
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 30),
 
-                const SizedBox(height: 32),
+              // Language Cards
+              Expanded(
+                child: ListView.builder(
+                  itemCount: languages.length,
+                  itemBuilder: (context, index) {
+                    final item = languages[index];
+                    final isSelected = _selectedLangCode == item['code'];
 
-                // Language Cards List
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: languages.length,
-                    separatorBuilder: (context, index) =>
-                    const SizedBox(height: 16),
-                    itemBuilder: (context, index) {
-                      final isSelected = selectedIndex == index;
-                      final item = languages[index];
-
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedIndex = index;
-                          });
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: surfaceWhite,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: isSelected ? primaryBlue : borderColor,
-                              width: isSelected ? 2 : 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: isSelected
-                                    ? primaryBlue.withValues(alpha: 0.12)
-                                    : Colors.black.withValues(alpha: 0.03),
-                                blurRadius: isSelected ? 12 : 8,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
+                    return GestureDetector(
+                      onTap: () => _onLanguageSelected(item['code']!),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: isSelected ? Colors.white : Colors.white.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isSelected ? AppTheme.primaryColor : const Color(0xFFE2E8F0),
+                            width: isSelected ? 2.5 : 1.0,
                           ),
-                          child: Row(
-                            children: [
-                              // Text Content
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      item['title']!,
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: isSelected
-                                            ? primaryBlue
-                                            : primaryText,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      item['subtitle']!,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        color: secondaryText,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: AppTheme.primaryColor.withOpacity(0.15),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 5),
+                                  )
+                                ]
+                              : [],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppTheme.primaryColor
+                                    : const Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
                               ),
-
-                              // Language Badge Box
-                              Container(
-                                width: 56,
-                                height: 56,
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? softCyan.withValues(alpha: 0.3)
-                                      : const Color(0xFFF3F8FC),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                alignment: Alignment.center,
+                              child: Center(
                                 child: Text(
-                                  item['badge']!,
+                                  item['code']!.toUpperCase(),
                                   style: TextStyle(
-                                    fontSize: 20,
+                                    fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: isSelected
-                                        ? primaryBlue
-                                        : secondaryText,
+                                    color: isSelected ? Colors.white : const Color(0xFF64748B),
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item['name']!,
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected
+                                          ? AppTheme.primaryColor
+                                          : const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    item['native']!,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                color: AppTheme.primaryColor,
+                                size: 28,
+                              ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
+              ),
 
-                // Confirm Selection Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const HomeScreen(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryBlue,
-                      elevation: 4,
-                      shadowColor: primaryBlue.withValues(alpha: 0.4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: const Text(
-                      'Confirm Selection',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+              // Action Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _proceed,
+                  child: Text(loc.translate('continue_btn')),
                 ),
-                const SizedBox(height: 12),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+            ],
           ),
         ),
       ),

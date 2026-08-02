@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../core/localization/app_localizations.dart';
+import '../core/theme/app_theme.dart';
+import '../models/business_task.dart';
+import '../providers/task_provider.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/task_card.dart';
+import 'edit_task_screen.dart';
 import 'whatsapp_message_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -10,550 +18,379 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  String _selectedFilter = 'all';
+  final TextEditingController _searchController = TextEditingController();
 
-  void _setFilter(String filter) {
-    setState(() {
-      _selectedFilter = filter;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<TaskProvider>(context, listen: false).loadTasks();
     });
+  }
+
+  Future<void> _selectCalendarDate() async {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: taskProvider.selectedDateFilter ?? DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    taskProvider.setDateFilter(picked);
+  }
+
+  String _getDateGroupHeader(DateTime date, AppLocalizations loc) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final targetDate = DateTime(date.year, date.month, date.day);
+
+    if (targetDate == today) {
+      return loc.translate('today');
+    } else if (targetDate == yesterday) {
+      return loc.translate('yesterday');
+    } else if (today.difference(targetDate).inDays < 7) {
+      return loc.translate('earlier_this_week');
+    } else if (today.difference(targetDate).inDays < 14) {
+      return loc.translate('last_week');
+    } else {
+      return loc.translate('older');
+    }
+  }
+
+  Map<String, List<BusinessTask>> _groupTasksByDate(List<BusinessTask> tasks, AppLocalizations loc) {
+    final Map<String, List<BusinessTask>> grouped = {};
+    for (var task in tasks) {
+      final header = _getDateGroupHeader(task.createdAt, loc);
+      if (!grouped.containsKey(header)) {
+        grouped[header] = [];
+      }
+      grouped[header]!.add(task);
+    }
+    return grouped;
+  }
+
+  void _showTaskDetailSheet(BusinessTask task) {
+    final loc = AppLocalizations.of(context);
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    task.customerName ?? 'Task Details',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(),
+              const SizedBox(height: 8),
+
+              _detailRow('Instruction:', task.originalInstruction),
+              if (task.action != null) _detailRow('Action:', task.action!),
+              if (task.amount != null) _detailRow('Amount:', '₹${task.amount}'),
+              if (task.dueDate != null) _detailRow('Due Date:', DateFormat('dd MMM yyyy').format(task.dueDate!)),
+              _detailRow('Task Status:', task.taskStatus),
+              _detailRow('Payment Status:', task.paymentStatus),
+
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => EditTaskScreen(task: task, isEditingExisting: true)),
+                        );
+                      },
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Edit'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => WhatsAppMessageScreen(task: task)),
+                        );
+                      },
+                      icon: const Icon(Icons.message_outlined, size: 18),
+                      label: const Text('Message'),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF25D366)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: () async {
+                        final newStatus = task.taskStatus == 'completed' ? 'pending' : 'completed';
+                        await taskProvider.updateTask(task.copyWith(taskStatus: newStatus));
+                        if (mounted) Navigator.pop(context);
+                      },
+                      icon: Icon(task.taskStatus == 'completed' ? Icons.undo : Icons.check_circle, color: AppTheme.accentGreen),
+                      label: Text(task.taskStatus == 'completed' ? 'Mark Pending' : 'Mark Completed', style: const TextStyle(color: AppTheme.accentGreen)),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _confirmDelete(task.id!),
+                    icon: const Icon(Icons.delete_outline, color: AppTheme.accentRed),
+                    label: Text(loc.translate('delete'), style: const TextStyle(color: AppTheme.accentRed)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.bold)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A), fontWeight: FontWeight.w500)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(int taskId) {
+    final loc = AppLocalizations.of(context);
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(loc.translate('delete_confirm_title')),
+          content: Text(loc.translate('delete_confirm_msg')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(loc.translate('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                await taskProvider.deleteTask(taskId);
+                if (mounted) {
+                  Navigator.pop(context); // Close dialog
+                  Navigator.pop(context); // Close bottom sheet
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accentRed),
+              child: Text(loc.translate('delete')),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    final taskProvider = Provider.of<TaskProvider>(context);
+    final currencyFormat = NumberFormat.currency(symbol: '₹', decimalDigits: 0);
+
+    final groupedTasks = _groupTasksByDate(taskProvider.tasks, loc);
+
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppTheme.lightBg,
+      appBar: AppBar(
+        title: Text(
+          loc.translate('history'),
+          style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              Icons.calendar_month,
+              color: taskProvider.selectedDateFilter != null ? AppTheme.primaryColor : const Color(0xFF0F172A),
+            ),
+            onPressed: _selectCalendarDate,
+          ),
+          if (taskProvider.selectedDateFilter != null)
+            IconButton(
+              icon: const Icon(Icons.clear, color: AppTheme.accentRed),
+              onPressed: () => taskProvider.setDateFilter(null),
+            ),
+        ],
+      ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header Row (Matches Dashboard look)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Column(
+          children: [
+            // Top Search Bar & Pending Balance Banner
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              color: Colors.white,
+              child: Column(
                 children: [
+                  // Search Field
+                  TextField(
+                    controller: _searchController,
+                    onChanged: (val) => taskProvider.setSearchQuery(val),
+                    decoration: InputDecoration(
+                      hintText: loc.translate('search_placeholder'),
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                taskProvider.setSearchQuery('');
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Filter Chips & Pending Balance Badge
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      IconButton(
-                        onPressed: () {},
-                        icon: const Icon(Icons.menu, color: AppTheme.primary, size: 28),
+                      Row(
+                        children: [
+                          _buildFilterChip(loc.translate('filter_all'), TaskFilter.all, taskProvider),
+                          const SizedBox(width: 6),
+                          _buildFilterChip(loc.translate('filter_pending'), TaskFilter.pending, taskProvider),
+                          const SizedBox(width: 6),
+                          _buildFilterChip(loc.translate('filter_completed'), TaskFilter.completed, taskProvider),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'VyaparMitra',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.primary,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentOrange.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          currencyFormat.format(taskProvider.totalPendingAmount),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFB45309),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppTheme.primary.withOpacity(0.1), width: 2),
-                    ),
-                    child: ClipOval(
-                      child: Image.network(
-                        "https://lh3.googleusercontent.com/aida-public/AB6AXuCnqFfvN07oQC3E-bK1LT15tRE2zOMzbxzbBItWRUGi8YthoFjgwId1gTGt9gXn-Ve75OT1VACh24RKpn4IPClTCANUljG3FghncZxmTMmmGWaND4x0HCsbltnQToPPqxdcGt3YfBtrc7VewReIcQ2UBNaXXQiqRsYMMK23KsKEx_UyDjQfFrzluMhJ3vzuMD0GzQHuL7z9kH8cOhM-aAVsuD2Wtk-VrEXUHsbX1nIzsPLc-2Gwvro",
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.person, color: AppTheme.primary),
-                      ),
-                    ),
-                  ),
                 ],
               ),
-              const SizedBox(height: 20),
+            ),
 
-              // Title Section
-              Text(
-                'ઇતિહાસ',
-                style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 32,
-                  letterSpacing: -1.0,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'તમારા વ્યવસાયના વ્યવહારો અહીં તપાસો અને મેનેજ કરો',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: AppTheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 24),
+            // History List
+            Expanded(
+              child: taskProvider.isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : taskProvider.tasks.isEmpty
+                      ? EmptyState(
+                          message: loc.translate('no_history'),
+                          icon: Icons.history_toggle_off,
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(20),
+                          itemCount: groupedTasks.keys.length,
+                          itemBuilder: (context, index) {
+                            final groupKey = groupedTasks.keys.elementAt(index);
+                            final tasksInGroup = groupedTasks[groupKey]!;
 
-              // Search Bar
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: TextField(
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, color: AppTheme.onSurfaceVariant),
-                    hintText: 'નામ અથવા વ્યવહાર શોધો...',
-                    hintStyle: TextStyle(color: AppTheme.onSurfaceVariant.withOpacity(0.5)),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Ledger and Sidebar layouts
-              Column(
-                children: [
-                  // Total Balance Card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      gradient: AppTheme.skyGradient,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primary.withOpacity(0.2),
-                          blurRadius: 15,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          right: -20,
-                          top: -20,
-                          child: Icon(
-                            Icons.account_balance_wallet,
-                            size: 140,
-                            color: Colors.white.withOpacity(0.08),
-                          ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'કુલ બાકી (Pending)',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.baseline,
-                              textBaseline: TextBaseline.alphabetic,
-                              children: const [
-                                Text(
-                                  '₹',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8.0, bottom: 12.0),
+                                  child: Text(
+                                    groupKey,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF64748B),
+                                      letterSpacing: 0.5,
+                                    ),
                                   ),
                                 ),
-                                SizedBox(width: 4),
-                                Text(
-                                  '84,200',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 40,
-                                    fontWeight: FontWeight.w800,
+                                ...tasksInGroup.map(
+                                  (t) => TaskCard(
+                                    task: t,
+                                    onTap: () => _showTaskDetailSheet(t),
                                   ),
                                 ),
                               ],
-                            ),
-                            const SizedBox(height: 24),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 50,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const WhatsAppMessageScreen(
-                                        customerName: 'મનોજભાઈ',
-                                        quantity: 'બધા બાકી બિલ',
-                                        amount: '₹ 84,200',
-                                        messageText: 'નમસ્તે મનોજભાઈ,\nતમારું કુલ બાકી ખાતું ₹ 84,200 છે.\nકૃપા કરીને વહેલી તકે ચુકવણી કરશો. આભાર!',
-                                      ),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: AppTheme.primary,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'ખાતું મોકલો',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    letterSpacing: 1.0,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                            );
+                          },
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Quick Filters
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade100),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'ઝડપી ફિલ્ટર્સ',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.onSurface,
-                            letterSpacing: 1.0,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            _buildFilterButton('all', 'બધા'),
-                            const SizedBox(width: 8),
-                            _buildFilterButton('completed', 'પૂર્ણ'),
-                            const SizedBox(width: 8),
-                            _buildFilterButton('pending', 'બાકી'),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Calendar View
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade100),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: const [
-                            Text(
-                              'કેલેન્ડર',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                            ),
-                            Icon(Icons.calendar_today, color: AppTheme.primary, size: 18),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        // Calendar Days Row
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: const [
-                            Text('S', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.onSurfaceVariant)),
-                            Text('M', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.onSurfaceVariant)),
-                            Text('T', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.onSurfaceVariant)),
-                            Text('W', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.onSurfaceVariant)),
-                            Text('T', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.onSurfaceVariant)),
-                            Text('F', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.onSurfaceVariant)),
-                            Text('S', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.onSurfaceVariant)),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        // Days Numbers
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildCalendarDay('12'),
-                            _buildCalendarDay('13'),
-                            _buildCalendarDay('14', isSelected: true),
-                            _buildCalendarDay('15'),
-                            _buildCalendarDay('16'),
-                            _buildCalendarDay('17'),
-                            _buildCalendarDay('18'),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Ledger Ledger Categories
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Today Category
-                      if (_selectedFilter == 'all' || _selectedFilter == 'pending') ...[
-                        _buildCategoryHeader('Today / આજે', AppTheme.primary),
-                        const SizedBox(height: 12),
-                        _buildLedgerItem(
-                          letter: 'M',
-                          name: 'Manojbhai',
-                          subtitle: 'Payment for stock',
-                          status: 'Pending / બાકી',
-                          amount: '₹ 4,500.00',
-                          isPending: true,
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // Yesterday Category
-                      if (_selectedFilter == 'all' || _selectedFilter == 'completed') ...[
-                        _buildCategoryHeader('Yesterday / ગઈકાલે', AppTheme.onSurfaceVariant.withOpacity(0.6)),
-                        const SizedBox(height: 12),
-                        _buildLedgerItem(
-                          letter: 'R',
-                          name: 'Rakesh',
-                          subtitle: 'General Groceries',
-                          status: 'Completed / પૂર્ણ',
-                          amount: '₹ 1,280.00',
-                          isPending: false,
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // Last Week Category
-                      if (_selectedFilter == 'all') ...[
-                        _buildCategoryHeader('Last Week / ગયા અઠવાડિયે', AppTheme.onSurfaceVariant.withOpacity(0.3)),
-                        const SizedBox(height: 12),
-                        _buildLedgerItem(
-                          letter: '🚚',
-                          name: 'Delivery',
-                          subtitle: 'Consignment #4920',
-                          status: 'Delivered',
-                          amount: '₹ 12,000.00',
-                          isPending: false,
-                          isCustomIcon: true,
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 40),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterButton(String filterCode, String label) {
-    final isSelected = _selectedFilter == filterCode;
-    return GestureDetector(
-      onTap: () => _setFilter(filterCode),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? null : AppTheme.surfaceContainerHigh,
-          gradient: isSelected ? AppTheme.skyGradient : null,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : AppTheme.onSurfaceVariant,
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCalendarDay(String dayNum, {bool isSelected = false}) {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        color: isSelected ? AppTheme.primary : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Center(
-        child: Text(
-          dayNum,
-          style: TextStyle(
-            color: isSelected ? Colors.white : AppTheme.onSurface,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-            fontSize: 12,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryHeader(String title, Color ringColor) {
-    return Row(
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: ringColor,
-            boxShadow: [
-              BoxShadow(
-                color: ringColor.withOpacity(0.3),
-                blurRadius: 4,
-                spreadRadius: 2,
-              )
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.primary,
-            letterSpacing: 1.0,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLedgerItem({
-    required String letter,
-    required String name,
-    required String subtitle,
-    required String status,
-    required String amount,
-    required bool isPending,
-    bool isCustomIcon = false,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-          ),
-        ],
-        border: Border.all(color: Colors.grey.shade100),
-      ),
-      child: Row(
-        children: [
-          // Avatar
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: isPending
-                  ? AppTheme.primary.withOpacity(0.05)
-                  : AppTheme.secondaryContainer.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
             ),
-            child: Center(
-              child: isCustomIcon
-                  ? const Icon(Icons.local_shipping, color: AppTheme.onSurfaceVariant, size: 24)
-                  : Text(
-                      letter,
-                      style: TextStyle(
-                        color: isPending ? AppTheme.primary : AppTheme.secondary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 16),
-
-          // Content
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Price and status tag
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isPending
-                      ? AppTheme.errorContainer.withOpacity(0.5)
-                      : AppTheme.secondaryContainer.withOpacity(0.4),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  status,
-                  style: TextStyle(
-                    color: isPending ? AppTheme.error : AppTheme.secondary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 10,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                amount,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, TaskFilter filter, TaskProvider provider) {
+    final isSelected = provider.currentFilter == filter;
+    return ChoiceChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected ? Colors.white : const Color(0xFF475569),
+        ),
+      ),
+      selected: isSelected,
+      selectedColor: AppTheme.primaryColor,
+      backgroundColor: const Color(0xFFF1F5F9),
+      onSelected: (_) => provider.setStatusFilter(filter),
     );
   }
 }

@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../core/localization/app_localizations.dart';
+import '../core/theme/app_theme.dart';
+import '../models/business_task.dart';
+import '../providers/task_provider.dart';
+import 'whatsapp_message_screen.dart';
 
 class EditTaskScreen extends StatefulWidget {
-  final String customerName;
-  final int quantity;
-  final double amount;
-  final void Function(String name, int qty, double amt) onSave;
+  final BusinessTask task;
+  final bool isEditingExisting;
 
   const EditTaskScreen({
     super.key,
-    required this.customerName,
-    required this.quantity,
-    required this.amount,
-    required this.onSave,
+    required this.task,
+    this.isEditingExisting = false,
   });
 
   @override
@@ -21,454 +23,476 @@ class EditTaskScreen extends StatefulWidget {
 
 class _EditTaskScreenState extends State<EditTaskScreen> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _nameController;
-  late TextEditingController _qtyController;
+
+  late TextEditingController _customerController;
+  late TextEditingController _actionController;
+  late TextEditingController _itemController;
+  late TextEditingController _quantityController;
+  late TextEditingController _unitController;
   late TextEditingController _amountController;
-  
+  late TextEditingController _nextActionController;
+  late TextEditingController _notesController;
+
+  late String _instructionType;
+  late String _paymentStatus;
+  late String _taskStatus;
+  DateTime? _dueDate;
+  TimeOfDay? _dueTime;
   bool _isSaving = false;
-  bool _isSaved = false;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.customerName);
-    _qtyController = TextEditingController(text: widget.quantity.toString());
-    _amountController = TextEditingController(text: widget.amount.toInt().toString());
+    final t = widget.task;
+
+    _customerController = TextEditingController(text: t.customerName ?? '');
+    _actionController = TextEditingController(text: t.action ?? '');
+    _itemController = TextEditingController(text: t.itemName ?? '');
+    _quantityController = TextEditingController(text: t.quantity != null ? t.quantity.toString() : '');
+    _unitController = TextEditingController(text: t.quantityUnit ?? '');
+    _amountController = TextEditingController(text: t.amount != null ? t.amount.toString() : '');
+    _nextActionController = TextEditingController(text: t.nextAction ?? '');
+    _notesController = TextEditingController(text: t.notes ?? '');
+
+    _instructionType = t.instructionType;
+    _paymentStatus = t.paymentStatus;
+    _taskStatus = t.taskStatus;
+    _dueDate = t.dueDate ?? DateTime.now();
+
+    if (t.dueTime != null && t.dueTime!.isNotEmpty) {
+      final parts = t.dueTime!.split(':');
+      if (parts.length >= 2) {
+        _dueTime = TimeOfDay(hour: int.tryParse(parts[0]) ?? 10, minute: int.tryParse(parts[1]) ?? 0);
+      }
+    }
   }
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _qtyController.dispose();
-    _amountController.dispose();
-    super.dispose();
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate ?? DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _dueDate = picked;
+      });
+    }
   }
 
-  void _submitData() {
-    if (!_formKey.currentState!.validate() || _isSaving) return;
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _dueTime ?? TimeOfDay.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _dueTime = picked;
+      });
+    }
+  }
+
+  Future<void> _saveTask() async {
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isSaving = true;
     });
 
-    // Simulate saving delay
-    Future.delayed(const Duration(milliseconds: 1200), () {
-      if (!mounted) return;
-      
-      setState(() {
-        _isSaving = false;
-        _isSaved = true;
-      });
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
 
-      widget.onSave(
-        _nameController.text,
-        int.tryParse(_qtyController.text) ?? widget.quantity,
-        double.tryParse(_amountController.text) ?? widget.amount,
-      );
+    final timeStr = _dueTime != null ? '${_dueTime!.hour.toString().padLeft(2, '0')}:${_dueTime!.minute.toString().padLeft(2, '0')}' : null;
 
-      // Show success briefly before popping
-      Future.delayed(const Duration(milliseconds: 1000), () {
-        if (!mounted) return;
-        Navigator.of(context).pop();
-      });
+    final updatedTask = widget.task.copyWith(
+      customerName: _customerController.text.trim().isEmpty ? null : _customerController.text.trim(),
+      instructionType: _instructionType,
+      action: _actionController.text.trim().isEmpty ? null : _actionController.text.trim(),
+      itemName: _itemController.text.trim().isEmpty ? null : _itemController.text.trim(),
+      quantity: double.tryParse(_quantityController.text.trim()),
+      quantityUnit: _unitController.text.trim().isEmpty ? null : _unitController.text.trim(),
+      amount: double.tryParse(_amountController.text.trim()),
+      dueDate: _dueDate,
+      dueTime: timeStr,
+      paymentStatus: _paymentStatus,
+      taskStatus: _taskStatus,
+      nextAction: _nextActionController.text.trim().isEmpty ? null : _nextActionController.text.trim(),
+      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+      updatedAt: DateTime.now(),
+    );
+
+    int savedId;
+    if (widget.isEditingExisting && updatedTask.id != null) {
+      await taskProvider.updateTask(updatedTask);
+      savedId = updatedTask.id!;
+    } else {
+      savedId = await taskProvider.addTask(updatedTask);
+    }
+
+    final finalTask = updatedTask.copyWith(id: savedId);
+
+    if (!mounted) return;
+    setState(() {
+      _isSaving = false;
     });
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WhatsAppMessageScreen(task: finalTask),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _customerController.dispose();
+    _actionController.dispose();
+    _itemController.dispose();
+    _quantityController.dispose();
+    _unitController.dispose();
+    _amountController.dispose();
+    _nextActionController.dispose();
+    _notesController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: AppTheme.backgroundGradient,
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppTheme.onSurface),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: const Text(
-            'કાર્ય સુધારો',
-            style: TextStyle(
-              color: AppTheme.onSurface,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 16.0),
-              child: ClipOval(
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Image.network(
-                    "https://lh3.googleusercontent.com/aida-public/AB6AXuDnnAFQzuJPksuCOdZZK84SQhgBRKYsPFAJ4UiGCzpoZXjmA_1tU64zfnFGTdPCw8oIrhDp2TkkgjgLFBlz8zela1ag9C_YFs_aqkhgY9jCQkbkaKeI-udd78X-cfdeE5mmMUcj0iF7Xi7En8P4Kjo4CWLm6KWRFlE8WbaWOk9swuJ_8jlktN0a9t1LW_t9tTBSWQ0R4MXa9KUB_i5Cz438CkET0qWXoFKtuB4ue00wdIvu3Qt1HCI",
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.person, color: AppTheme.primary),
-                  ),
-                ),
-              ),
-            ),
-          ],
+    final loc = AppLocalizations.of(context);
+    final isLowConfidence = (widget.task.confidence ?? 1.0) < 0.60;
+
+    return Scaffold(
+      backgroundColor: AppTheme.lightBg,
+      appBar: AppBar(
+        title: Text(
+          loc.translate('edit_task'),
+          style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
         ),
-        body: SingleChildScrollView(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Summary Header Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                      )
-                    ],
-                    border: Border.all(color: AppTheme.primary.withOpacity(0.05)),
+                // Low confidence warning
+                if (isLowConfidence)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentOrange.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.accentOrange),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: AppTheme.accentOrange),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            loc.translate('low_confidence_warning'),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFB45309),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+
+                // Customer Name
+                _buildSectionHeader(loc.translate('customer_name')),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _customerController,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.person_outline),
+                    hintText: 'e.g. મનોજભાઈ / Manojbhai',
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Instruction Type & Action
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(Icons.edit_document, color: AppTheme.primary),
+                          _buildSectionHeader(loc.translate('instruction_type')),
+                          const SizedBox(height: 6),
+                          DropdownButtonFormField<String>(
+                            initialValue: ['task', 'order', 'payment_reminder', 'delivery', 'customer_follow_up', 'other'].contains(_instructionType)
+                                ? _instructionType
+                                : 'order',
+                            items: const [
+                              DropdownMenuItem(value: 'order', child: Text('Order')),
+                              DropdownMenuItem(value: 'delivery', child: Text('Delivery')),
+                              DropdownMenuItem(value: 'payment_reminder', child: Text('Payment')),
+                              DropdownMenuItem(value: 'customer_follow_up', child: Text('Follow-up')),
+                              DropdownMenuItem(value: 'task', child: Text('Task')),
+                              DropdownMenuItem(value: 'other', child: Text('Other')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) setState(() => _instructionType = val);
+                            },
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
-                                Text(
-                                  'Edit Task',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.onSurface,
-                                  ),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Transaction details for Order #4421',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppTheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Action / Work
+                _buildSectionHeader(loc.translate('action')),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _actionController,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.work_outline),
+                    hintText: 'e.g. 25 box મોકલવા',
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Item & Quantity & Unit
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader(loc.translate('item_name')),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _itemController,
+                            decoration: const InputDecoration(
+                              prefixIcon: Icon(Icons.inventory_2_outlined),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      Row(
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppTheme.secondaryContainer.withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Text(
-                              'In Progress',
-                              style: TextStyle(
-                                color: AppTheme.primary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                              ),
+                          _buildSectionHeader(loc.translate('quantity')),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _quantityController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              hintText: '25',
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(12),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Amount (₹) & Unit
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader(loc.translate('amount')),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _amountController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              prefixIcon: Icon(Icons.currency_rupee),
+                              hintText: '12500',
                             ),
-                            child: const Text(
-                              'Oct 24, 2023',
-                              style: TextStyle(
-                                color: AppTheme.onSurfaceVariant,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader(loc.translate('quantity_unit')),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _unitController,
+                            decoration: const InputDecoration(
+                              hintText: 'box / kg',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Date & Time Pickers
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader(loc.translate('due_date')),
+                          const SizedBox(height: 6),
+                          InkWell(
+                            onTap: _pickDate,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                prefixIcon: Icon(Icons.calendar_today),
+                              ),
+                              child: Text(
+                                _dueDate != null ? DateFormat('dd MMM yyyy').format(_dueDate!) : 'Select Date',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
                               ),
                             ),
                           ),
                         ],
                       ),
-                    ],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader(loc.translate('due_time')),
+                          const SizedBox(height: 6),
+                          InkWell(
+                            onTap: _pickTime,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                prefixIcon: Icon(Icons.access_time),
+                              ),
+                              child: Text(
+                                _dueTime != null ? _dueTime!.format(context) : 'Select Time',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Payment Status & Task Status
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader(loc.translate('payment_status')),
+                          const SizedBox(height: 6),
+                          DropdownButtonFormField<String>(
+                            initialValue: ['pending', 'paid', 'partial', 'not_applicable'].contains(_paymentStatus)
+                                ? _paymentStatus
+                                : 'pending',
+                            items: const [
+                              DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                              DropdownMenuItem(value: 'paid', child: Text('Paid')),
+                              DropdownMenuItem(value: 'partial', child: Text('Partial')),
+                              DropdownMenuItem(value: 'not_applicable', child: Text('N/A')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) setState(() => _paymentStatus = val);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader(loc.translate('task_status')),
+                          const SizedBox(height: 6),
+                          DropdownButtonFormField<String>(
+                            initialValue: ['pending', 'in_progress', 'completed', 'cancelled'].contains(_taskStatus)
+                                ? _taskStatus
+                                : 'pending',
+                            items: const [
+                              DropdownMenuItem(value: 'pending', child: Text('Pending')),
+                              DropdownMenuItem(value: 'in_progress', child: Text('In Progress')),
+                              DropdownMenuItem(value: 'completed', child: Text('Completed')),
+                              DropdownMenuItem(value: 'cancelled', child: Text('Cancelled')),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) setState(() => _taskStatus = val);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Next Action
+                _buildSectionHeader(loc.translate('next_action')),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _nextActionController,
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.next_plan_outlined),
+                  ),
+                ),
+                const SizedBox(height: 30),
+
+                // Submit Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isSaving ? null : _saveTask,
+                    icon: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_circle_outline),
+                    label: Text(_isSaving ? 'Saving...' : loc.translate('save_task')),
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // Form card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                      )
-                    ],
-                    border: Border.all(color: AppTheme.primary.withOpacity(0.05)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Customer name input
-                      const Text(
-                        'Customer / ગ્રાહક',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: _nameController,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.person, color: AppTheme.onSurfaceVariant),
-                          hintText: 'ગ્રાહકનું નામ લખો',
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
-                          ),
-                        ),
-                        validator: (value) => value == null || value.isEmpty ? 'Please enter name' : null,
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Quantity and Amount row
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Quantity / જથ્થો',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                TextFormField(
-                                  controller: _qtyController,
-                                  keyboardType: TextInputType.number,
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                  decoration: InputDecoration(
-                                    prefixIcon: const Icon(Icons.inventory_2, color: AppTheme.onSurfaceVariant),
-                                    hintText: '0',
-                                    filled: true,
-                                    fillColor: Colors.grey.shade50,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                    ),
-                                  ),
-                                  validator: (value) => value == null || value.isEmpty ? 'Qty' : null,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Amount / રકમ (₹)',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                TextFormField(
-                                  controller: _amountController,
-                                  keyboardType: TextInputType.number,
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                  decoration: InputDecoration(
-                                    prefixIcon: const Icon(Icons.payments, color: AppTheme.onSurfaceVariant),
-                                    hintText: '0.00',
-                                    filled: true,
-                                    fillColor: Colors.grey.shade50,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(color: Colors.grey.shade200),
-                                    ),
-                                  ),
-                                  validator: (value) => value == null || value.isEmpty ? 'Amount' : null,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Context Warning Alert
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.surfaceContainerHighest.withOpacity(0.5)),
-                        ),
-                        child: Row(
-                          children: const [
-                            Icon(Icons.info, color: AppTheme.primary, size: 20),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'આ કાર્યને સુધારવાથી મનોજભાઈનું લેજર આપમેળે અપડેટ થશે.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontStyle: FontStyle.italic,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-
-                      // Action Buttons
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          decoration: BoxDecoration(
-                            color: _isSaved
-                                ? const Color(0xFF16A34A)
-                                : (_isSaving ? Colors.transparent : null),
-                            gradient: !_isSaved && !_isSaving ? AppTheme.skyGradient : null,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: ElevatedButton(
-                            onPressed: _isSaving || _isSaved ? null : _submitData,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              foregroundColor: Colors.white,
-                              shadowColor: Colors.transparent,
-                              disabledForegroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: _isSaving
-                                ? Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: const [
-                                      SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                      ),
-                                      SizedBox(width: 12),
-                                      Text(
-                                        'સાચવી રહ્યું છે...',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                    ],
-                                  )
-                                : (_isSaved
-                                    ? Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: const [
-                                          Icon(Icons.check_circle, color: Colors.white, size: 24),
-                                          SizedBox(width: 10),
-                                          Text(
-                                            'સફળતાપૂર્વક સચવાયેલ!',
-                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                          ),
-                                        ],
-                                      )
-                                    : Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: const [
-                                          Icon(Icons.check_circle, size: 22),
-                                          SizedBox(width: 8),
-                                          Text(
-                                            'સેવ કરો / Save Changes',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
-                                      )),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Cancel
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppTheme.onSurfaceVariant,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 40),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.bold,
+        color: Color(0xFF475569),
       ),
     );
   }
